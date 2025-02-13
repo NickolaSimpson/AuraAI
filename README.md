@@ -48,7 +48,14 @@ Develop a mobile app for user-friendly notifications
 
 
 <h2>Contribution</h2>
-Contributions are welcome! Please submit a pull request or open an issue for any suggestions or bug reports.
+Contributions are:
+-Nickola Simpson
+-Bariat Shuaib
+-Carlisa Wright
+Mentors:
+-Negash Begashaw
+
+Please submit a pull request or open an issue for any suggestions or bug reports.
 
 
 <h2>License</h2>
