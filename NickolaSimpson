@@ -1,1 +1,152 @@
-changes
+import os
+import kagglehub
+import pandas as pd
+import numpy as np
+import requests
+import json  # Added missing import
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+
+# Define the dataset path
+dataset_dir = "biosensor_student_health_fitness_data"
+
+# Function to download dataset
+def download_dataset():
+    if not os.path.exists(dataset_dir):
+        print("Downloading dataset from Kaggle...")
+        kagglehub.dataset_download("ziya07/biosensor-studenthealthfitnessdata", path=dataset_dir)  # Fixed dataset path
+        print(f"Dataset downloaded and saved to {dataset_dir}.")
+    else:
+        print("Dataset already exists. Skipping download.")
+
+# Function to load dataset
+def load_dataset():
+    csv_file_path = os.path.join(dataset_dir, "student_health_fitness_dataset.csv")  # Adjust filename if needed
+    if os.path.exists(csv_file_path):
+        # Load the CSV file into a DataFrame
+        data = pd.read_csv(csv_file_path)
+        print(f"Dataset loaded with {data.shape[0]} rows and {data.shape[1]} columns.")
+        return data
+    else:
+        print(f"Dataset file not found at {csv_file_path}. Please check the file path.")
+        return None
+
+# Download dataset if not already available
+download_dataset()
+
+# Load dataset
+data = load_dataset()
+
+# Check if data is loaded successfully
+if data is not None:
+    # Example: Creating a binary target for migraine onset
+    threshold_brain_activity = 50  # Adjust this value based on domain knowledge
+    threshold_heart_rate = 100  # Adjust this value based on domain knowledge
+
+    # Creating a binary target variable for migraine onset
+    data['Migraine Onset'] = np.where(
+        (data['Brain Function'] > threshold_brain_activity) & (data['Heart Rate (bpm)'] > threshold_heart_rate), 
+        1, 0  # 1 indicates migraine onset, 0 indicates no migraine
+    )
+
+    # Feature Engineering (Example: HR to Skin Temp ratio)
+    data['HR_SkinTemp_Ratio'] = data['Heart Rate (bpm)'] / data['Body Temperature (°C)']
+
+    # Add environmental factors (for now, assume they're in the dataset)
+    data['Light'] = np.random.uniform(100, 1000, len(data))  # Random example for light intensity (lux)
+    data['Noise'] = np.random.uniform(30, 90, len(data))  # Random example for noise level (dB)
+    data['Air Pressure'] = np.random.uniform(990, 1050, len(data))  # Random example for air pressure (hPa)
+
+    # Combine features for prediction model
+    features = ['Heart Rate (bpm)', 'Body Temperature (°C)', 'Brain Function', 'HR_SkinTemp_Ratio', 'Light', 'Noise', 'Air Pressure']
+    X = data[features]
+    y = data['Migraine Onset']  # Using 'Migraine Onset' as the target
+
+    # Split the data into training and testing sets
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+    # Standardize the features
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+
+    # Train a Random Forest Classifier
+    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    model.fit(X_train_scaled, y_train)
+
+    # Make predictions
+    y_pred = model.predict(X_test_scaled)
+
+    # Evaluate the model
+    print("Model Evaluation:")
+    print(f"Accuracy: {accuracy_score(y_test, y_pred)}")
+    print("Classification Report:")
+    print(classification_report(y_test, y_pred))
+
+    # **Confusion Matrix**
+    cm = confusion_matrix(y_test, y_pred)
+
+    # Plotting confusion matrix
+    plt.figure(figsize=(7, 6))
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", xticklabels=["No Migraine", "Migraine"], yticklabels=["No Migraine", "Migraine"])
+    plt.title("Confusion Matrix")
+    plt.xlabel("Predicted")
+    plt.ylabel("Actual")
+    plt.show()
+
+    # **Heatmap of feature correlations**
+    plt.figure(figsize=(10, 8))
+    corr_matrix = data[features].corr()  # Calculate correlations between features
+    sns.heatmap(corr_matrix, annot=True, cmap="coolwarm", linewidths=0.5)
+    plt.title("Feature Correlation Heatmap")
+    plt.show()
+
+# Function to fetch environmental data from Open-Meteo API
+def fetch_environmental_data():
+    url = "https://api.open-meteo.com/v1/forecast?latitude=40.7128&longitude=-74.0060&current=temperature_2m,relative_humidity_2m,pressure_msl"
+
+    try:
+        response = requests.get(url, timeout=10)  # Set timeout for faster failure handling
+        response.raise_for_status()  # Raise an error for HTTP errors (4xx, 5xx)
+
+        data = response.json()  # Parse JSON response
+        print(json.dumps(data, indent=4))  # Print formatted JSON data
+
+        # Extract specific environmental data
+        current_data = data.get("current", {})
+        temperature = current_data.get("temperature_2m", None)
+        humidity = current_data.get("relative_humidity_2m", None)
+        air_pressure = current_data.get("pressure_msl", None)
+
+        print(f"Temperature: {temperature}°C, Humidity: {humidity}%, Air Pressure: {air_pressure} hPa")
+        return temperature, humidity, air_pressure
+
+    except requests.exceptions.RequestException as e:
+        print(f"Request failed: {e}")
+    except json.JSONDecodeError:
+        print("Error: Response content is not valid JSON.")
+
+    return None, None, None
+
+# Fetch environmental data once
+temperature, humidity, air_pressure = fetch_environmental_data()
+
+if temperature is not None and humidity is not None and air_pressure is not None:
+    print("Using the fetched environmental data for prediction...")
+    
+    feature_dict = {
+        'Heart Rate (bpm)': 0,
+        'Body Temperature (°C)': 0,
+        'Brain Function': 0,
+        'HR_SkinTemp_Ratio': 0,
+        'Light': 0,
+        'Noise': 0,
+        'Air Pressure': air_pressure
+    }
+
+    feature_vector = pd.DataFrame([feature_dict])
+    feature_vector_scaled = scaler.transform(feature_vector)
