@@ -1,0 +1,10 @@
+!pip install kagglehub
+!mkdir -p ~/.kaggle
+!mv kaggle.json ~/.kaggle/
+!chmod 600 ~/.kaggle/kaggle.json
+!pip install numpy 
+!pip install pandas 
+!pip install scikit-learn 
+!pip install matplotlib 
+!pip install seaborn 
+!pip install requests kagglehub
