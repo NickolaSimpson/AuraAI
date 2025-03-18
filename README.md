@@ -14,7 +14,7 @@ Data visualization for insights into migraine patterns
 
 
 <h2>Technologies Used</h2>
-Programming Languages: Python, C++
+Programming Languages: Python
 Machine Learning: TensorFlow, Scikit-learn
 Data Processing: Pandas, NumPy
 Wearable Integration: Bluetooth, IoT APIs
