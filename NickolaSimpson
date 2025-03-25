@@ -1,1 +1,156 @@
-changes
+import os
+import kagglehub
+import pandas as pd
+import numpy as np
+import requests
+import json
+import seaborn as sns
+import matplotlib.pyplot as plt
+from zipfile import ZipFile
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+
+# Define dataset directory and filename
+dataset_dir = "biosensor_student_health_fitness_data"
+dataset_zip = "dataset.zip"  # Temporary zip file
+dataset_filename = "student_health_fitness_dataset.csv"  # Adjust as needed
+
+# Function to download dataset
+def download_dataset():
+    if not os.path.exists(dataset_dir):
+        print("Downloading dataset from Kaggle...")
+
+        try:
+            os.system("kaggle datasets download -d ziya07/biosensor-studenthealthfitnessdata -p .")
+            os.system(f"unzip biosensor-studenthealthfitnessdata.zip -d {dataset_dir}")
+            os.remove("biosensor-studenthealthfitnessdata.zip")
+            print(f"Dataset downloaded and extracted to {dataset_dir}.")
+        except Exception as e:
+            print(f"Error downloading dataset: {e}")
+    else:
+        print("Dataset already exists. Skipping download.")
+
+
+# Function to load dataset
+def load_dataset():
+    csv_file_path = os.path.join(dataset_dir, dataset_filename)
+    if os.path.exists(csv_file_path):
+        data = pd.read_csv(csv_file_path)
+        print(f"Dataset loaded with {data.shape[0]} rows and {data.shape[1]} columns.")
+        return data
+    else:
+        print(f"Dataset file not found at {csv_file_path}. Check the filename.")
+        return None
+
+# Download and load dataset
+download_dataset()
+data = load_dataset()
+
+if data is not None:
+    # Creating a binary target for migraine onset
+    threshold_brain_activity = 50
+    threshold_heart_rate = 100
+
+    data['Migraine Onset'] = np.where(
+        (data['Brain Function'] > threshold_brain_activity) & (data['Heart Rate (bpm)'] > threshold_heart_rate),
+        1, 0
+    )
+
+    # Feature Engineering
+    data['HR_SkinTemp_Ratio'] = data['Heart Rate (bpm)'] / data['Body Temperature (°C)']
+
+    # Add environmental factors (assume random values)
+    np.random.seed(42)
+    data['Light'] = np.random.uniform(100, 1000, len(data))
+    data['Noise'] = np.random.uniform(30, 90, len(data))
+    data['Air Pressure'] = np.random.uniform(990, 1050, len(data))
+
+    # Selecting features and target
+    features = ['Heart Rate (bpm)', 'Body Temperature (°C)', 'Brain Function', 'HR_SkinTemp_Ratio', 'Light', 'Noise', 'Air Pressure']
+    X = data[features]
+    y = data['Migraine Onset']
+
+    # Splitting data
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+    # Standardizing features
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+
+    # Train Random Forest Model
+    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    model.fit(X_train_scaled, y_train)
+
+    # Make predictions
+    y_pred = model.predict(X_test_scaled)
+
+    # Evaluate model
+    print("Model Evaluation:")
+    print(f"Accuracy: {accuracy_score(y_test, y_pred):.2f}")
+    print("Classification Report:\n", classification_report(y_test, y_pred))
+
+    # Plot Confusion Matrix
+    cm = confusion_matrix(y_test, y_pred)
+    plt.figure(figsize=(7, 6))
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", xticklabels=["No Migraine", "Migraine"], yticklabels=["No Migraine", "Migraine"])
+    plt.title("Confusion Matrix")
+    plt.xlabel("Predicted")
+    plt.ylabel("Actual")
+    plt.show()
+
+    # Heatmap of Feature Correlations
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(data[features].corr(), annot=True, cmap="coolwarm", linewidths=0.5)
+    plt.title("Feature Correlation Heatmap")
+    plt.show()
+
+# Function to fetch environmental data
+def fetch_environmental_data():
+    url = "https://api.open-meteo.com/v1/forecast?latitude=40.7128&longitude=-74.0060&current=temperature_2m,relative_humidity_2m,pressure_msl"
+
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+
+        data = response.json()
+        current_data = data.get("current", {})
+        temperature = current_data.get("temperature_2m")
+        humidity = current_data.get("relative_humidity_2m")
+        air_pressure = current_data.get("pressure_msl")
+
+        print(f"Temperature: {temperature}°C, Humidity: {humidity}%, Air Pressure: {air_pressure} hPa")
+        return temperature, humidity, air_pressure
+
+    except requests.exceptions.RequestException as e:
+        print(f"Request failed: {e}")
+    except json.JSONDecodeError:
+        print("Error: Invalid JSON response.")
+
+    return None, None, None
+
+# Fetch environmental data
+temperature, humidity, air_pressure = fetch_environmental_data()
+
+# Ensure environmental data is valid before making predictions
+if temperature is not None and humidity is not None and air_pressure is not None:
+    print("Using fetched environmental data for prediction...")
+
+    feature_dict = {
+        'Heart Rate (bpm)': np.mean(data['Heart Rate (bpm)']),
+        'Body Temperature (°C)': temperature,
+        'Brain Function': np.mean(data['Brain Function']),
+        'HR_SkinTemp_Ratio': np.mean(data['Heart Rate (bpm)']) / temperature if temperature > 0 else 0,
+        'Light': np.mean(data['Light']),
+        'Noise': np.mean(data['Noise']),
+        'Air Pressure': air_pressure
+    }
+
+    feature_vector = pd.DataFrame([feature_dict])
+    feature_vector_scaled = scaler.transform(feature_vector)
+
+    # Predict using the trained model
+    predicted_migraine = model.predict(feature_vector_scaled)
+    print(f"Predicted Migraine Onset: {'Yes' if predicted_migraine[0] == 1 else 'No'}")
